@@ -5,7 +5,6 @@ import ast
 import logging
 from pathlib import Path
 import re
-from typing import Iterable
 
 from pygls.lsp.server import LanguageServer
 from pygls.workspace import TextDocument
@@ -13,13 +12,21 @@ from lsprotocol import types
 
 from . import __version__
 from .config import ServerSettings
+from .python_analysis import (
+    completions as python_completions,
+    definitions as python_definitions,
+    hover as python_hover,
+    jedi_available,
+)
 from .runtime import executable_exists, load_json, run_command, write_shadow_file
+from .sage_bridge import query_member, query_symbol
 from .shadow import (
     ShadowDocument,
     build_shadow_document,
     find_local_symbol,
     find_word_at_position,
     member_completions,
+    member_context_at_position,
 )
 from .symbols import SymbolIndex
 
@@ -76,7 +83,10 @@ def did_open_or_change(
     )
 
 
-@server.feature(types.TEXT_DOCUMENT_COMPLETION)
+@server.feature(
+    types.TEXT_DOCUMENT_COMPLETION,
+    types.CompletionOptions(trigger_characters=[".", "(", "[", ",", " "], resolve_provider=False),
+)
 def completion(
     ls: ZSMSageLanguageServer,
     params: types.CompletionParams,
@@ -88,18 +98,31 @@ def completion(
     snapshot = ls.document_snapshot(doc)
     line_text = doc.lines[params.position.line][: params.position.character]
 
+    items: dict[str, CompletionEntry] = {}
     if line_text.endswith("."):
+        if ls.settings.enable_jedi and jedi_available():
+            for item in python_completions(
+                snapshot,
+                ls.workspace.root_path,
+                doc.path,
+                params.position.line,
+                params.position.character,
+            ):
+                items[item.label] = CompletionEntry(
+                    label=item.label,
+                    kind=_python_completion_kind(item.kind),
+                    documentation=item.documentation,
+                )
+
         base_name = _base_name_before_dot(line_text)
-        labels = member_completions(base_name, snapshot.inferred_types) if base_name else []
-        return [
-            types.CompletionItem(label=label, kind=types.CompletionItemKind.Method)
-            for label in labels[: ls.settings.max_completion_items]
-        ]
+        if base_name:
+            for label in member_completions(base_name, snapshot.inferred_types):
+                items.setdefault(label, CompletionEntry(label=label, kind=types.CompletionItemKind.Method))
+        return _completion_items_from_entries(items, ls.settings.max_completion_items)
 
     prefix_match = WORD_RE.search(line_text)
     prefix = prefix_match.group() if prefix_match else ""
 
-    items: dict[str, CompletionEntry] = {}
     for symbol in snapshot.local_symbols:
         if prefix and not symbol.name.startswith(prefix):
             continue
@@ -108,6 +131,23 @@ def completion(
             kind=_completion_kind(symbol.kind),
             documentation=f"Local {symbol.kind}",
         )
+
+    if ls.settings.enable_jedi and jedi_available():
+        for item in python_completions(
+            snapshot,
+            ls.workspace.root_path,
+            doc.path,
+            params.position.line,
+            params.position.character,
+        ):
+            items.setdefault(
+                item.label,
+                CompletionEntry(
+                    label=item.label,
+                    kind=_python_completion_kind(item.kind),
+                    documentation=item.documentation,
+                ),
+            )
 
     for symbol in ls.symbol_index.complete(prefix, limit=ls.settings.max_completion_items):
         items.setdefault(
@@ -119,21 +159,7 @@ def completion(
             ),
         )
 
-    results = list(items.values())
-    results.sort(key=lambda item: item.label)
-    return [
-        types.CompletionItem(
-            label=item.label,
-            kind=item.kind,
-            documentation=types.MarkupContent(
-                kind=types.MarkupKind.Markdown,
-                value=item.documentation,
-            )
-            if item.documentation
-            else None,
-        )
-        for item in results[: ls.settings.max_completion_items]
-    ]
+    return _completion_items_from_entries(items, ls.settings.max_completion_items)
 
 
 @server.feature(types.TEXT_DOCUMENT_HOVER)
@@ -147,26 +173,45 @@ def hover(ls: ZSMSageLanguageServer, params: types.HoverParams) -> types.Hover |
     if not symbol_name:
         return None
 
-    local_symbol = find_local_symbol(snapshot.local_symbols, symbol_name)
     blocks: list[str] = []
+    local_symbol = find_local_symbol(snapshot.local_symbols, symbol_name)
     if local_symbol:
         blocks.append(f"```text\n{local_symbol.kind} {local_symbol.name}\n```")
+
+    if ls.settings.enable_jedi and jedi_available():
+        python_info = python_hover(
+            snapshot,
+            ls.workspace.root_path,
+            doc.path,
+            params.position.line,
+            params.position.character,
+        )
+        if python_info is not None:
+            blocks.append(python_info.value[:2500])
+
+    member_context = member_context_at_position(doc.source, params.position.line, params.position.character)
+    if ls.settings.enable_sage_bridge and member_context:
+        base_name, member_name = member_context
+        inferred_kind = snapshot.inferred_types.get(base_name)
+        if inferred_kind:
+            member_info = query_member(tuple(ls.settings.sage_command), inferred_kind, member_name)
+            if member_info:
+                blocks.append(_sage_markdown(member_info))
 
     symbol = ls.symbol_index.get(symbol_name)
     if symbol:
         blocks.append(symbol.doc[:2000])
 
+    if ls.settings.enable_sage_bridge:
+        symbol_info = query_symbol(tuple(ls.settings.sage_command), symbol_name)
+        if symbol_info:
+            blocks.append(_sage_markdown(symbol_info))
+
+    blocks = _dedupe_blocks(blocks)
     if not blocks:
         return None
 
-    start = params.position.character
-    end = params.position.character
-    line_text = doc.lines[params.position.line]
-    for match in re.finditer(rf"\b{re.escape(symbol_name)}\b", line_text):
-        if match.start() <= params.position.character <= match.end():
-            start, end = match.start(), match.end()
-            break
-
+    start, end = _word_range(doc.lines[params.position.line], params.position.character, symbol_name)
     return types.Hover(
         contents=types.MarkupContent(
             kind=types.MarkupKind.Markdown,
@@ -190,17 +235,37 @@ def definition(ls: ZSMSageLanguageServer, params: types.DefinitionParams) -> lis
     if not symbol_name:
         return []
 
-    matches = [symbol for symbol in snapshot.local_symbols if symbol.name == symbol_name]
-    return [
-        types.Location(
-            uri=doc.uri,
-            range=types.Range(
-                start=types.Position(line=symbol.line, character=symbol.character),
-                end=types.Position(line=symbol.line, character=symbol.character + len(symbol.name)),
-            ),
-        )
-        for symbol in matches
-    ]
+    locations: list[types.Location] = []
+
+    locations.extend(_local_definition_locations(doc, snapshot, symbol_name))
+
+    if ls.settings.enable_jedi and jedi_available():
+        for item in python_definitions(
+            snapshot,
+            ls.workspace.root_path,
+            doc.path,
+            params.position.line,
+            params.position.character,
+        ):
+            locations.append(_definition_to_location(doc, item.path, item.line, item.character, item.name))
+
+    member_context = member_context_at_position(doc.source, params.position.line, params.position.character)
+    if ls.settings.enable_sage_bridge and member_context:
+        base_name, member_name = member_context
+        inferred_kind = snapshot.inferred_types.get(base_name)
+        if inferred_kind:
+            member_info = query_member(tuple(ls.settings.sage_command), inferred_kind, member_name)
+            location = _sage_info_to_location(member_info, member_name)
+            if location:
+                locations.append(location)
+
+    if ls.settings.enable_sage_bridge:
+        symbol_info = query_symbol(tuple(ls.settings.sage_command), symbol_name)
+        location = _sage_info_to_location(symbol_info, symbol_name)
+        if location:
+            locations.append(location)
+
+    return _unique_locations(locations)
 
 
 @server.feature(types.TEXT_DOCUMENT_REFERENCES)
@@ -379,14 +444,13 @@ def _ty_diagnostics(
             max(end.get("line", 1) - 1, 0),
             max(end.get("column", 1) - 1, 0),
         )
-        severity = item.get("severity", "major")
         diagnostics.append(
             types.Diagnostic(
                 range=types.Range(
                     start=types.Position(line=start_line, character=start_char),
                     end=types.Position(line=end_line, character=max(end_char, start_char + 1)),
                 ),
-                severity=_ty_severity(severity),
+                severity=_ty_severity(item.get("severity", "major")),
                 source="ty",
                 code=item.get("check_name"),
                 message=item.get("description", "ty diagnostic"),
@@ -419,6 +483,43 @@ def _completion_kind(kind: str) -> types.CompletionItemKind:
     return mapping.get(kind, types.CompletionItemKind.Text)
 
 
+def _python_completion_kind(kind: str) -> types.CompletionItemKind:
+    mapping = {
+        "module": types.CompletionItemKind.Module,
+        "namespace": types.CompletionItemKind.Module,
+        "class": types.CompletionItemKind.Class,
+        "instance": types.CompletionItemKind.Reference,
+        "function": types.CompletionItemKind.Function,
+        "param": types.CompletionItemKind.Variable,
+        "path": types.CompletionItemKind.File,
+        "keyword": types.CompletionItemKind.Keyword,
+        "property": types.CompletionItemKind.Property,
+        "statement": types.CompletionItemKind.Variable,
+    }
+    return mapping.get(kind, types.CompletionItemKind.Text)
+
+
+def _completion_items_from_entries(
+    entries: dict[str, CompletionEntry],
+    limit: int,
+) -> list[types.CompletionItem]:
+    results = list(entries.values())
+    results.sort(key=lambda item: item.label)
+    return [
+        types.CompletionItem(
+            label=item.label,
+            kind=item.kind,
+            documentation=types.MarkupContent(
+                kind=types.MarkupKind.Markdown,
+                value=item.documentation,
+            )
+            if item.documentation
+            else None,
+        )
+        for item in results[:limit]
+    ]
+
+
 def _document_symbol_kind(kind: str) -> types.SymbolKind:
     mapping = {
         "function": types.SymbolKind.Function,
@@ -434,3 +535,101 @@ def _ty_severity(value: str) -> types.DiagnosticSeverity:
     if value in {"minor"}:
         return types.DiagnosticSeverity.Warning
     return types.DiagnosticSeverity.Information
+
+
+def _word_range(line_text: str, character: int, symbol_name: str) -> tuple[int, int]:
+    for match in re.finditer(rf"\b{re.escape(symbol_name)}\b", line_text):
+        if match.start() <= character <= match.end():
+            return match.start(), match.end()
+    return character, character + len(symbol_name)
+
+
+def _local_definition_locations(doc: TextDocument, snapshot: ShadowDocument, symbol_name: str) -> list[types.Location]:
+    matches = [symbol for symbol in snapshot.local_symbols if symbol.name == symbol_name]
+    return [
+        types.Location(
+            uri=doc.uri,
+            range=types.Range(
+                start=types.Position(line=symbol.line, character=symbol.character),
+                end=types.Position(line=symbol.line, character=symbol.character + len(symbol.name)),
+            ),
+        )
+        for symbol in matches
+    ]
+
+
+def _definition_to_location(doc: TextDocument, path: str | None, line: int, character: int, name: str) -> types.Location:
+    if not path or (doc.path and path == doc.path):
+        uri = doc.uri
+    else:
+        uri = Path(path).expanduser().resolve().as_uri()
+    return types.Location(
+        uri=uri,
+        range=types.Range(
+            start=types.Position(line=line, character=character),
+            end=types.Position(line=line, character=character + len(name)),
+        ),
+    )
+
+
+def _sage_markdown(info: dict) -> str:
+    signature = info.get("signature", "")
+    doc = (info.get("doc") or "").strip()
+    blocks = []
+    if signature:
+        blocks.append(f"```python\n{signature}\n```")
+    if doc:
+        blocks.append(doc[:3000])
+    return "\n\n---\n\n".join(blocks)
+
+
+def _sage_info_to_location(info: dict | None, fallback_name: str) -> types.Location | None:
+    if not info:
+        return None
+    file_path = info.get("file")
+    if not file_path:
+        return None
+    path = Path(file_path).expanduser()
+    try:
+        uri = path.resolve().as_uri()
+    except Exception:
+        return None
+    line = max(int(info.get("line", 1)) - 1, 0)
+    name = info.get("name") or fallback_name
+    return types.Location(
+        uri=uri,
+        range=types.Range(
+            start=types.Position(line=line, character=0),
+            end=types.Position(line=line, character=len(name)),
+        ),
+    )
+
+
+def _unique_locations(locations: list[types.Location]) -> list[types.Location]:
+    seen = set()
+    unique: list[types.Location] = []
+    for location in locations:
+        key = (
+            location.uri,
+            location.range.start.line,
+            location.range.start.character,
+            location.range.end.line,
+            location.range.end.character,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(location)
+    return unique
+
+
+def _dedupe_blocks(blocks: list[str]) -> list[str]:
+    seen = set()
+    deduped = []
+    for block in blocks:
+        normalized = block.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped

@@ -13,6 +13,8 @@ class ServerSettings:
     enable_definition: bool = True
     enable_references: bool = True
     enable_document_symbols: bool = True
+    enable_jedi: bool = True
+    enable_sage_bridge: bool = True
     enable_ruff: bool = True
     enable_ty: bool = True
     max_completion_items: int = 120

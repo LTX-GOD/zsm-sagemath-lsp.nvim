@@ -15,6 +15,7 @@ FUNCTION_ASSIGN_RE = re.compile(
 )
 ELLIPSIS_RANGE_RE = re.compile(r"(?P<left>[A-Za-z0-9_)\]]+)\s*\.\.\s*(?P<right>[A-Za-z0-9_(\[]+)")
 SYMBOL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+RING_LITERAL_RE = re.compile(r"^(?P<base>.+?)\[[^\]]*\]\s*$")
 
 PRELUDE_LINES = [
     "from typing import Any as __sage_any",
@@ -80,6 +81,28 @@ class ShadowDocument:
         original_char = min(shadow_character, len(original_lines[original_line]))
         return original_line, original_char
 
+    def shadow_position(self, original_line: int, original_character: int, symbol_name: str | None = None) -> tuple[int, int]:
+        shadow_lines = self.shadow_source.splitlines() or [""]
+        candidates = [index for index, mapped in enumerate(self.line_map) if mapped == original_line]
+        if not candidates:
+            return original_line, original_character
+
+        if symbol_name:
+            for candidate in candidates:
+                for match in re.finditer(rf"\b{re.escape(symbol_name)}\b", shadow_lines[candidate]):
+                    if original_character <= match.end():
+                        return candidate, match.start()
+
+        for candidate in candidates:
+            if original_character <= len(shadow_lines[candidate]):
+                return candidate, original_character
+
+        last = candidates[-1]
+        return last, min(original_character, len(shadow_lines[last]))
+
+    def find_word(self, line: int, character: int) -> str | None:
+        return find_word_at_position(self.source, line, character)
+
 
 def build_shadow_document(source: str) -> ShadowDocument:
     shadow_lines: list[str] = []
@@ -112,7 +135,7 @@ def transform_line(line: str) -> list[str]:
         indent = ring_match.group("indent")
         ring_name = ring_match.group("ring")
         gens = [item.strip() for item in ring_match.group("gens").split(",") if item.strip()]
-        expr = _rewrite_ranges(ring_match.group("expr"))
+        expr = _rewrite_ring_expression(_rewrite_ranges(ring_match.group("expr")), gens)
         if gens:
             tuple_repr = ", ".join(gens)
             if len(gens) == 1:
@@ -139,6 +162,15 @@ def transform_line(line: str) -> list[str]:
 
 def _rewrite_ranges(line: str) -> str:
     return ELLIPSIS_RANGE_RE.sub(r"sage_range(\g<left>, \g<right>)", line)
+
+
+def _rewrite_ring_expression(expr: str, gens: list[str]) -> str:
+    match = RING_LITERAL_RE.match(expr.strip())
+    if not match or not gens:
+        return expr
+    base = match.group("base").strip()
+    names = ", ".join(repr(gen) for gen in gens)
+    return f"PolynomialRing({base}, names=({names},))"
 
 
 def collect_symbols(shadow_source: str, line_map: list[int]) -> tuple[list[LocalSymbol], dict[str, str]]:
@@ -239,3 +271,14 @@ def member_completions(base_name: str, inferred_types: dict[str, str]) -> list[s
     if inferred and inferred in COMMON_METHODS:
         return COMMON_METHODS[inferred]
     return COMMON_METHODS["generic"]
+
+
+def member_context_at_position(source: str, line: int, character: int) -> tuple[str, str] | None:
+    lines = source.splitlines()
+    if line < 0 or line >= len(lines):
+        return None
+    text = lines[line]
+    for match in re.finditer(r"\b(?P<base>[A-Za-z_][A-Za-z0-9_]*)\.(?P<member>[A-Za-z_][A-Za-z0-9_]*)\b", text):
+        if match.start("member") <= character <= match.end("member"):
+            return match.group("base"), match.group("member")
+    return None
