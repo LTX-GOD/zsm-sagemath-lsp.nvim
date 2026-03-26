@@ -1,22 +1,6 @@
 # 快速开始
 
-## 5 分钟上手指南
-
-### 1. 安装 sage-lsp
-
-```bash
-pip install sage-lsp
-```
-
-### 2. 验证安装
-
-```bash
-sagelsp --sage
-```
-
-### 3. 配置 Neovim
-
-在 `~/.config/nvim/lua/plugins/sage.lua` 添加：
+## 1. 安装插件
 
 ```lua
 return {
@@ -25,29 +9,44 @@ return {
   dependencies = { "neovim/nvim-lspconfig" },
   config = function()
     require("zsm-sagemath-lsp").setup()
-  end
+  end,
 }
 ```
 
-### 4. 重启 Neovim
+## 2. 准备环境
+
+进入插件目录执行：
 
 ```bash
-nvim
+uv sync
 ```
 
-### 5. 测试
+确认系统里有 `sage`：
 
-创建 `test.sage`:
+```bash
+sage --version
+```
+
+## 3. 启动 Neovim
+
+```bash
+nvim test.sage
+```
+
+## 4. 检查状态
+
+```vim
+:checkhealth zsm-sagemath-lsp
+:SageLspInfo
+```
+
+## 5. 试一段代码
 
 ```python
-R = PolynomialRing(ZZ, 'x')
-x = R.gen()
-p = x^2 + 2*x + 1
-print(p.factor())
+R.<x> = PolynomialRing(ZZ)
+f(t) = t^2 + 1
+M = matrix(QQ, [[1, 2], [3, 4]])
+M.det()
 ```
 
-打开文件，输入 `p.` 应该看到补全提示。
-
-## 完成！
-
-现在你可以享受 SageMath 的智能编辑体验了。
+现在应当可以得到基本补全、悬停、诊断和本地定义跳转。

@@ -15,10 +15,12 @@ install:
 	@echo "安装完成！"
 
 test:
-	@echo "检查 sage-lsp..."
-	@which sagelsp || echo "警告: sage-lsp 未安装"
+	@echo "检查 uv..."
+	@uv --version || echo "警告: uv 未安装"
 	@echo "检查 SageMath..."
 	@sage --version || echo "警告: SageMath 未安装"
+	@echo "检查 Python 单元测试..."
+	@PYTHONPATH=src python3 -m unittest tests/test_shadow.py
 
 clean:
 	@echo "清理临时文件..."

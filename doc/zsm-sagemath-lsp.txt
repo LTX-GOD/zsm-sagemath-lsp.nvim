@@ -11,14 +11,15 @@
 ==============================================================================
 1. 介绍                                         *zsm-sagemath-lsp-intro*
 
-zsm-sagemath-lsp 是一个为 Neovim 提供 SageMath 语言服务器协议支持的插件。
+zsm-sagemath-lsp 是一个为 Neovim 提供 SageMath 支持的插件，内置独立的
+Python LSP 服务端，不再依赖外部 sage-lsp。
 
 功能:
   - 代码补全
-  - 跳转到定义
+  - 跳转到本地定义
   - 悬停文档
-  - 代码诊断
-  - 代码格式化
+  - 代码诊断 (shadow syntax / ruff / ty)
+  - 运行当前 Sage 文件
 
 ==============================================================================
 2. 安装                                         *zsm-sagemath-lsp-install*
@@ -27,10 +28,15 @@ zsm-sagemath-lsp 是一个为 Neovim 提供 SageMath 语言服务器协议支持
   {
     "zsm/zsm-sagemath-lsp",
     ft = "sage",
+    dependencies = { "neovim/nvim-lspconfig" },
     config = function()
       require("zsm-sagemath-lsp").setup()
     end
   }
+<
+
+插件目录初始化依赖: >
+  uv sync
 <
 
 ==============================================================================
@@ -41,10 +47,23 @@ setup({opts})                                   *zsm-sagemath-lsp.setup()*
 
     参数: ~
         {opts} (table) 配置选项
-            • cmd: LSP 服务器命令 (默认: {"sagelsp"})
+            • cmd: LSP 服务器命令
+            • init_options: 传给内置 LSP 的初始化配置
             • log_level: 日志级别 (默认: "INFO")
             • on_attach: LSP 附加回调函数
             • capabilities: LSP 能力配置
+
+==============================================================================
+4. 命令                                         *zsm-sagemath-lsp-commands*
+
+    :SageRun
+        运行当前 `.sage` 文件
+
+    :SageLspInfo
+        显示 uv / Sage / 内置服务端状态
+
+    :SageLspRestart
+        重启当前 LSP 客户端
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

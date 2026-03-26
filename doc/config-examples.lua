@@ -40,5 +40,9 @@ require("zsm-sagemath-lsp").setup({
 
 -- 4. 调试模式
 require("zsm-sagemath-lsp").setup({
-  cmd = { "sagelsp", "-l", "DEBUG" },
+  log_level = "DEBUG",
+  init_options = {
+    enable_ruff = true,
+    enable_ty = true,
+  },
 })

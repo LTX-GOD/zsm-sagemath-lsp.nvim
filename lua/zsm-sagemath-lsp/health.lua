@@ -7,16 +7,14 @@ function M.check()
 
   health.start("zsm-sagemath-lsp")
 
-  -- 检查 sage-lsp
-  if utils.check_sagelsp() then
-    health.ok("sage-lsp 已安装")
+  if utils.check_uv() then
+    health.ok("uv 已安装")
   else
-    health.error("sage-lsp 未安装", {
-      "运行: pip install sage-lsp"
+    health.error("uv 未安装", {
+      "访问 https://docs.astral.sh/uv/ 安装 uv",
     })
   end
 
-  -- 检查 SageMath
   if utils.check_sage() then
     health.ok("SageMath 已安装")
   else
@@ -32,6 +30,15 @@ function M.check()
   else
     health.error("nvim-lspconfig 未安装", {
       "安装: https://github.com/neovim/nvim-lspconfig"
+    })
+  end
+
+  if utils.check_runtime_dependencies() then
+    health.ok("内置 Python LSP 服务端可启动")
+  else
+    health.warn("内置 Python LSP 服务端依赖未准备好", {
+      "在插件目录执行: uv sync",
+      "或首次启动时让 uv 自动创建环境",
     })
   end
 end

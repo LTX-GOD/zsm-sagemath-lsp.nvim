@@ -1,96 +1,117 @@
 # zsm-sagemath-lsp
 
-SageMath Language Server Protocol (LSP) plugin for Neovim
+SageMath support for Neovim with a bundled Python LSP server.
 
-English | [简体中文](README.zh.md)
+This project no longer depends on `sage-lsp`. The repository now contains:
+
+- A Neovim plugin written in Lua
+- A Python LSP server managed by `uv`
+- A bundled SageMath symbol index reused for completion and hover
 
 ## Features
 
-- ✅ **Code Completion** - Intelligent completion for SageMath functions and objects
-- ✅ **Go to Definition** - Jump to function/class definitions
-- ✅ **Hover Documentation** - Display function signatures and docs
-- ✅ **Diagnostics** - Real-time error checking (pyflakes + pycodestyle)
-- ✅ **Code Formatting** - Auto-format code (autopep8)
-- ✅ **Find References** - Find symbol references
-- ✅ **Code Folding** - Support code block folding
-- ✅ **Syntax Highlighting** - SageMath-specific syntax highlighting
+- Local LSP server started through `uv`
+- Completion from local symbols, bundled SageMath symbols, and common member heuristics
+- Hover for local definitions and bundled SageMath documentation
+- Local definition and reference lookup
+- Diagnostics from:
+  - Shadow-transformed Sage source syntax checks
+  - `ruff`
+  - `ty`
+- `.sage` and `.sagews` filetype support
+- `:SageRun`, `:SageLspInfo`, `:SageLspRestart`
+- Optional snippet loading through `LuaSnip`
+
+## Architecture
+
+The server runs in its own Python environment and does not require the whole LSP process to live
+inside Sage's Python runtime.
+
+- `uv` manages the server environment
+- `ruff` and `ty` run on a shadow Python representation of `.sage` files
+- Sage-specific completion and hover data come from the bundled symbol index
+
+This keeps the workflow aligned with `uv + ruff + ty`, which was the main goal of this rewrite.
 
 ## Installation
 
-### Prerequisites
+### Requirements
 
-- Neovim >= 0.8.0
-- Python >= 3.10
-- SageMath installed
-- [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
+- Neovim >= 0.8
+- `uv`
+- `sage`
+- `nvim-lspconfig`
 
-### 1. Install sage-lsp
-
-```bash
-pip install sage-lsp
-```
-
-### 2. Install Plugin
-
-#### Using lazy.nvim (Recommended)
+### Plugin
 
 ```lua
 {
   "zsm/zsm-sagemath-lsp",
-  ft = "sage",
+  ft = { "sage" },
   dependencies = {
     "neovim/nvim-lspconfig",
   },
   config = function()
     require("zsm-sagemath-lsp").setup()
-  end
+  end,
 }
 ```
 
-#### Using packer.nvim
+### Prepare the Python environment
 
-```lua
-use {
-  "zsm/zsm-sagemath-lsp",
-  ft = "sage",
-  requires = { "neovim/nvim-lspconfig" },
-  config = function()
-    require("zsm-sagemath-lsp").setup()
-  end
-}
+Inside the plugin directory:
+
+```bash
+uv sync
 ```
+
+You can also let `uv` create the environment on first start, but running `uv sync` explicitly is
+more predictable.
 
 ## Configuration
 
-### Basic Setup
-
-```lua
-require("zsm-sagemath-lsp").setup()
-```
-
-### Custom Configuration
-
 ```lua
 require("zsm-sagemath-lsp").setup({
-  cmd = { "sagelsp", "-l", "DEBUG" },
-  on_attach = function(client, bufnr)
-    local opts = { noremap=true, silent=true, buffer=bufnr }
-    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
-    vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
-    vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
+  log_level = "INFO",
+  init_options = {
+    enable_ruff = true,
+    enable_ty = true,
+    max_completion_items = 200,
+  },
+  on_attach = function(_, bufnr)
+    local opts = { buffer = bufnr, silent = true }
+    vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
+    vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
+    vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
   end,
-  capabilities = require('cmp_nvim_lsp').default_capabilities(),
 })
 ```
 
-## Usage
+Default server command:
 
-Create a `test.sage` file and the LSP will start automatically.
+```lua
+{ "uv", "run", "--project", "<plugin-root>", "python", "-m", "zsm_sagemath_lsp" }
+```
 
-## Related Projects
+## Commands
 
-- [sage-lsp](https://github.com/SeanDictionary/sage-lsp) - SageMath LSP server
-- [sagemath-vscode-enhanced](https://github.com/Lov3/sagemath-vscode-enhanced) - VSCode extension
+- `:SageRun` run current `.sage` file with `sage`
+- `:SageLspInfo` show environment diagnostics
+- `:SageLspRestart` restart the LSP client
+
+## Health Check
+
+```vim
+:checkhealth zsm-sagemath-lsp
+```
+
+## Current Limits
+
+- Formatting is intentionally not enabled yet. Reformatting `.sage` while preserving Sage-specific
+  syntax needs a dedicated formatter instead of blindly reusing Python formatters.
+- Definition and reference lookup are local-first right now.
+- The shadow transformation already handles common Sage syntax such as `R.<x> = ...` and
+  `f(x) = ...`, but it is not a full Sage parser yet.
 
 ## License
 

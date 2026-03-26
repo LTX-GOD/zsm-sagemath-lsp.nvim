@@ -1,68 +1,37 @@
 # 贡献指南
 
-感谢你对 zsm-sagemath-lsp 的关注！
+## 提交问题
 
-## 如何贡献
+请尽量附带以下信息：
 
-### 报告 Bug
+1. Neovim 版本
+2. `uv --version`
+3. `sage --version`
+4. `:checkhealth zsm-sagemath-lsp`
+5. 最小复现 `.sage` 代码
+6. `:LspLog` 中的相关日志
 
-在 GitHub Issues 中提交 bug 报告，请包含：
+## 开发结构
 
-1. Neovim 版本 (`:version`)
-2. sage-lsp 版本 (`sagelsp --version`)
-3. 重现步骤
-4. 预期行为 vs 实际行为
-5. 相关日志 (`:LspLog`)
-
-### 提交功能请求
-
-在 Issues 中描述：
-
-1. 功能描述
-2. 使用场景
-3. 预期效果
-
-### 提交代码
-
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
-
-## 开发指南
-
-### 项目结构
-
-```
+```text
 zsm-sagemath-lsp/
-├── lua/                    # Lua 模块
-│   └── zsm-sagemath-lsp/
-│       ├── init.lua        # 主模块
-│       ├── utils.lua       # 工具函数
-│       └── health.lua      # 健康检查
-├── syntax/                 # 语法高亮
-├── ftdetect/               # 文件类型检测
-├── ftplugin/               # 文件类型插件
-└── doc/                    # 文档
+├── lua/                   # Neovim 客户端
+├── src/zsm_sagemath_lsp/  # Python LSP 服务端
+├── syntax/                # Vim 语法高亮
+├── ftplugin/              # filetype 配置
+├── ftdetect/              # 文件类型识别
+└── tests/                 # Python 单元测试
 ```
 
-### 测试
+## 本地检查
 
 ```bash
-# 检查依赖
 make test
-
-# 手动测试
-nvim test.sage
+python3 -m compileall src
 ```
 
-## 代码规范
+## 约定
 
-- Lua 代码使用 2 空格缩进
-- Vim script 使用 2 空格缩进
-- 提交信息遵循 Conventional Commits
-
-## 许可证
-
-贡献的代码将采用 GPL-3.0 许可证。
+- Python 依赖统一放在 `pyproject.toml`
+- Python 相关工作流统一走 `uv`
+- 不要把 `.sage` 直接当成普通 Python 做破坏性格式化

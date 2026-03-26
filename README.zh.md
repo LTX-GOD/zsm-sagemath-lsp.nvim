@@ -1,190 +1,123 @@
 # zsm-sagemath-lsp
 
-适用于 Neovim 的 SageMath 语言服务器协议 (LSP) 插件
+这是一个面向 Neovim 的 SageMath 插件，现在自带 Python LSP 服务端，不再依赖外部 `sage-lsp`。
 
-[English](README.md) | 简体中文
+仓库里同时包含两部分：
 
-## 简介
+- Lua 写的 Neovim 客户端
+- 用 `uv` 管理的 Python LSP 服务端
 
-这是一个为 Neovim 编辑器提供 SageMath 支持的 LSP 插件，基于 [sage-lsp](https://github.com/SeanDictionary/sage-lsp) 项目。
+## 目标
 
-## 功能特性
+原来的 `sage-lsp` 更偏向传统 Python 生态，和 `uv + ruff + ty` 的工作流不够贴合。这个项目现在的方向是：
 
-- ✅ **代码补全** - 智能补全 SageMath 函数和对象
-- ✅ **跳转定义** - 快速跳转到函数/类定义
-- ✅ **悬停文档** - 显示函数签名和文档
-- ✅ **代码诊断** - 实时错误检查 (pyflakes + pycodestyle)
-- ✅ **代码格式化** - 自动格式化代码 (autopep8)
-- ✅ **引用查找** - 查找符号引用
-- ✅ **代码折叠** - 支持代码块折叠
-- ✅ **语法高亮** - SageMath 特定语法高亮
+- LSP 服务端由你自己维护
+- 依赖与运行统一走 `uv`
+- 诊断优先接 `ruff` 和 `ty`
+- 不要求整个 LSP 进程运行在 Sage 自带 Python 里
+
+## 当前功能
+
+- 通过 `uv` 启动内置 LSP 服务端
+- 本地符号补全
+- 内置 SageMath 符号索引补全与悬停文档
+- 常见对象方法的启发式补全
+- 本地定义跳转与引用查找
+- 诊断来源：
+  - shadow 转换后的语法检查
+  - `ruff`
+  - `ty`
+- `.sage` / `.sagews` 文件类型检测
+- `:SageRun`、`:SageLspInfo`、`:SageLspRestart`
+- 检测到 `LuaSnip` 时自动加载 snippets
+
+## 架构
+
+现在的核心思路是把 `.sage` 文件先转换成一份 shadow Python 代码，再把这份代码喂给静态工具：
+
+- `ruff` 和 `ty` 跑在 shadow 代码上
+- `.sage` 里的 `R.<x> = ...`、`f(x) = ...` 等常见语法会先被改写
+- SageMath 的补全/文档基于仓库内置的符号索引
+
+这套设计的重点不是复刻整个 Sage parser，而是先把 `uv + ruff + ty + Neovim` 这条链路打通。
 
 ## 安装
 
-### 前置要求
+### 依赖
 
-- Neovim >= 0.8.0
-- Python >= 3.10
-- SageMath 已安装
-- [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
+- Neovim >= 0.8
+- `uv`
+- `sage`
+- `nvim-lspconfig`
 
-### 1. 安装 sage-lsp
-
-```bash
-pip install sage-lsp
-```
-
-### 2. 安装插件
-
-#### 使用 lazy.nvim (推荐)
+### 插件配置
 
 ```lua
 {
   "zsm/zsm-sagemath-lsp",
-  ft = "sage",
+  ft = { "sage" },
   dependencies = {
     "neovim/nvim-lspconfig",
   },
   config = function()
     require("zsm-sagemath-lsp").setup()
-  end
+  end,
 }
 ```
 
-#### 使用 packer.nvim
+### 初始化 Python 环境
 
-```lua
-use {
-  "zsm/zsm-sagemath-lsp",
-  ft = "sage",
-  requires = { "neovim/nvim-lspconfig" },
-  config = function()
-    require("zsm-sagemath-lsp").setup()
-  end
-}
+在插件目录执行：
+
+```bash
+uv sync
 ```
 
-## 配置
+也可以首次启动时让 `uv` 自动建环境，但显式执行一次 `uv sync` 更稳。
 
-### 基础配置
-
-```lua
-require("zsm-sagemath-lsp").setup()
-```
-
-### 自定义配置
+## 配置示例
 
 ```lua
 require("zsm-sagemath-lsp").setup({
-  cmd = { "sagelsp", "-l", "DEBUG" },  -- 自定义命令
-  on_attach = function(client, bufnr)
-    -- 按键绑定
-    local opts = { noremap=true, silent=true, buffer=bufnr }
-    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
-    vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
-    vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
-    vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, opts)
-    vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action, opts)
-    vim.keymap.set('n', '<leader>f', function()
-      vim.lsp.buf.format({ async = true })
-    end, opts)
+  log_level = "INFO",
+  init_options = {
+    enable_ruff = true,
+    enable_ty = true,
+    max_completion_items = 200,
+  },
+  on_attach = function(_, bufnr)
+    local opts = { buffer = bufnr, silent = true }
+    vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
+    vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
+    vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
   end,
-  capabilities = require('cmp_nvim_lsp').default_capabilities(),
 })
 ```
 
-## 使用示例
+默认服务端启动命令：
 
-创建 `test.sage` 文件：
-
-```python
-# 定义多项式环
-R = PolynomialRing(ZZ, 'x')
-x = R.gen()
-
-# 多项式运算
-p = x^2 + 2*x + 1
-print(p.factor())  # 输入 p. 后会显示补全列表
-
-# 矩阵运算
-M = matrix(QQ, [[1, 2], [3, 4]])
-print(M.det())  # 悬停在 det 上显示文档
+```lua
+{ "uv", "run", "--project", "<plugin-root>", "python", "-m", "zsm_sagemath_lsp" }
 ```
 
-打开文件后，LSP 会自动启动并提供智能提示。
+## 命令
 
-## 快捷键
+- `:SageRun` 用 `sage` 执行当前文件
+- `:SageLspInfo` 查看环境和服务端状态
+- `:SageLspRestart` 重启 LSP
 
-默认 LSP 快捷键（需要在 `on_attach` 中配置）：
+## 健康检查
 
-- `gd` - 跳转到定义
-- `K` - 显示悬停文档
-- `gr` - 查找引用
-- `<leader>rn` - 重命名符号
-- `<leader>ca` - 代码操作
-- `<leader>f` - 格式化代码
-
-## 故障排除
-
-### LSP 未启动
-
-检查 LSP 状态：
 ```vim
-:LspInfo
+:checkhealth zsm-sagemath-lsp
 ```
 
-查看日志：
-```vim
-:LspLog
-```
+## 当前限制
 
-### sage-lsp 未找到
-
-验证安装：
-```bash
-which sagelsp
-sagelsp --sage
-```
-
-### SageMath 未检测到
-
-检查 SageMath：
-```bash
-sage --version
-```
-
-## 项目结构
-
-```
-zsm-sagemath-lsp/
-├── doc/                    # 文档
-│   ├── example.lua         # 配置示例
-│   └── zsm-sagemath-lsp.txt # Vim 帮助文档
-├── ftdetect/               # 文件类型检测
-│   └── sage.vim
-├── ftplugin/               # 文件类型插件
-│   └── sage.lua
-├── lua/                    # Lua 模块
-│   └── zsm-sagemath-lsp/
-│       └── init.lua        # 主模块
-├── syntax/                 # 语法高亮
-│   └── sage.vim
-├── CHANGELOG.md
-├── INSTALL.md
-├── LICENSE
-└── README.md
-```
-
-## 相关项目
-
-- [sage-lsp](https://github.com/SeanDictionary/sage-lsp) - SageMath LSP 服务器
-- [sagemath-vscode-enhanced](https://github.com/Lov3/sagemath-vscode-enhanced) - VSCode 扩展
-- [sage-code](https://github.com/SeanDictionary/sage-code) - VSCode 语法支持
+- 还没有默认开启格式化，因为 `.sage` 的格式化不能直接粗暴套 Python formatter。
+- 定义跳转和引用查找当前是“本地优先”。
+- shadow 转换已经支持常见 Sage 语法，但还不是完整 Sage parser。
 
 ## 许可证
 
-GPL-3.0 License
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
+GPL-3.0

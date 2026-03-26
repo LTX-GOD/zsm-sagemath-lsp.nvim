@@ -1,79 +1,48 @@
-# 常见问题 (FAQ)
+# 常见问题
 
-## 安装问题
+## LSP 没启动
 
-### Q: LSP 服务器无法启动？
+先检查：
 
-**A:** 检查以下几点：
+```vim
+:checkhealth zsm-sagemath-lsp
+:LspInfo
+:SageLspInfo
+```
 
-1. 确认 sage-lsp 已安装：
-   ```bash
-   which sagelsp
-   sagelsp --sage
-   ```
+再确认：
 
-2. 查看 LSP 日志：
-   ```vim
-   :LspLog
-   ```
-
-3. 检查健康状态：
-   ```vim
-   :checkhealth zsm-sagemath-lsp
-   ```
-
-### Q: 提示 "sage-lsp not found"？
-
-**A:** 安装 sage-lsp：
 ```bash
-pip install sage-lsp
+uv --version
+sage --version
 ```
 
-确保安装路径在 PATH 中。
+## 第一次启动很慢
 
-## 功能问题
+第一次通常是在让 `uv` 创建环境并安装依赖。建议提前在插件目录执行一次：
 
-### Q: 代码补全不工作？
-
-**A:** 确保：
-1. LSP 服务器已启动 (`:LspInfo`)
-2. 文件类型正确 (`:set filetype?` 应显示 `sage`)
-3. SageMath 10.8+ 已安装（需要 .pyi 文件）
-
-### Q: 跳转到定义不工作？
-
-**A:** 某些 SageMath 内置函数可能无法跳转，这是正常的。对于用户定义的函数应该可以正常工作。
-
-### Q: 如何自定义按键绑定？
-
-**A:** 在 `on_attach` 中设置：
-```lua
-require("zsm-sagemath-lsp").setup({
-  on_attach = function(client, bufnr)
-    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, {buffer=bufnr})
-  end,
-})
+```bash
+uv sync
 ```
 
-## 性能问题
+## ruff 或 ty 没有诊断
 
-### Q: LSP 响应很慢？
+默认服务端会尝试使用自身环境里的 `ruff` 和 `ty`。如果你手工改了 `cmd` 或 Python 环境，先确认对应环境里真的有这两个命令。
 
-**A:** 尝试：
-1. 减少诊断数量
-2. 禁用某些功能
-3. 升级到最新版本的 sage-lsp
+## 为什么没有默认格式化
 
-## 其他问题
+`.sage` 不是纯 Python。直接把 Python formatter 套到原始 `.sage` 文件上，会把 Sage 语法破坏掉。当前版本故意不默认开放格式化，等后面补专门的 Sage formatter。
 
-### Q: 支持哪些 SageMath 版本？
+## 跳转定义为什么有时只能跳本地
 
-**A:** 建议使用 SageMath 10.8+，其他版本功能可能受限。
+当前版本优先保证本地符号分析稳定，Sage 内置对象的深层语义跳转还在继续补。
 
-### Q: 如何报告 bug？
+## 如何报告问题
 
-**A:** 在 GitHub Issues 提交，包含：
+提交 issue 时最好附带：
+
 - Neovim 版本
-- sage-lsp 版本
-- 重现步骤
-- 错误日志
+- `uv --version`
+- `sage --version`
+- `:checkhealth zsm-sagemath-lsp` 输出
+- 最小复现代码
