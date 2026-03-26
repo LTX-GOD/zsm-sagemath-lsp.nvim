@@ -18,6 +18,7 @@ from .python_analysis import (
     hover as python_hover,
     import_completions,
     jedi_available,
+    workspace_python,
 )
 from .runtime import executable_exists, load_json, run_command, write_shadow_file
 from .sage_bridge import query_member, query_symbol
@@ -432,6 +433,7 @@ def _ty_diagnostics(
     command = [*ls.settings.ty_command, "check", "--output-format", "gitlab"]
     if ls.workspace.root_path:
         command.extend(["--project", ls.workspace.root_path])
+        command.extend(["--python", workspace_python(ls.workspace.root_path)])
     command.append(str(shadow_path))
     result = run_command(command, cwd=ls.workspace.root_path)
 

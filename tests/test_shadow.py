@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from zsm_sagemath_lsp.python_analysis import import_completions
 from zsm_sagemath_lsp.shadow import build_shadow_document, find_word_at_position, member_context_at_position
 
 
@@ -30,6 +31,11 @@ class ShadowTests(unittest.TestCase):
     def test_member_context_detection(self) -> None:
         source = "M.det()\n"
         self.assertEqual(member_context_at_position(source, 0, 3), ("M", "det"))
+
+    def test_import_completion_for_stdlib(self) -> None:
+        labels = [item.label for item in import_completions("from json import lo", None)]
+        self.assertIn("load", labels)
+        self.assertIn("loads", labels)
 
 
 if __name__ == "__main__":
