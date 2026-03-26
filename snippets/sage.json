@@ -1,0 +1,46 @@
+{
+  "Polynomial Ring": {
+    "prefix": "polyring",
+    "body": [
+      "${1:R} = PolynomialRing(${2:ZZ}, '${3:x}')",
+      "${3:x} = ${1:R}.gen()",
+      "$0"
+    ],
+    "description": "Create a polynomial ring"
+  },
+  "Matrix": {
+    "prefix": "matrix",
+    "body": [
+      "${1:M} = matrix(${2:QQ}, [",
+      "    [${3:1, 2}],",
+      "    [${4:3, 4}]",
+      "])",
+      "$0"
+    ],
+    "description": "Create a matrix"
+  },
+  "Symbolic Variable": {
+    "prefix": "var",
+    "body": [
+      "var('${1:x}')",
+      "$0"
+    ],
+    "description": "Declare symbolic variable"
+  },
+  "Elliptic Curve": {
+    "prefix": "elliptic",
+    "body": [
+      "${1:E} = EllipticCurve(${2:QQ}, [${3:a4}, ${4:a6}])",
+      "$0"
+    ],
+    "description": "Create an elliptic curve"
+  },
+  "Plot": {
+    "prefix": "plot",
+    "body": [
+      "plot(${1:f}, (${2:x}, ${3:0}, ${4:10}))",
+      "$0"
+    ],
+    "description": "Plot a function"
+  }
+}

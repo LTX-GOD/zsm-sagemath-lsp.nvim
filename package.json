@@ -1,0 +1,13 @@
+{
+  "name": "zsm-sagemath-lsp",
+  "version": "1.0.0",
+  "description": "SageMath LSP plugin for Neovim",
+  "main": "lua/zsm-sagemath-lsp/init.lua",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zsm/zsm-sagemath-lsp"
+  },
+  "keywords": ["neovim", "sagemath", "lsp", "sage"],
+  "author": "zsm",
+  "license": "GPL-3.0"
+}

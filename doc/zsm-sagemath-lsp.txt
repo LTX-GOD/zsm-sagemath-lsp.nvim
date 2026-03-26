@@ -1,0 +1,50 @@
+*zsm-sagemath-lsp.txt*  SageMath LSP for Neovim
+
+==============================================================================
+目录                                            *zsm-sagemath-lsp-contents*
+
+1. 介绍 ........................... |zsm-sagemath-lsp-intro|
+2. 安装 ........................... |zsm-sagemath-lsp-install|
+3. 配置 ........................... |zsm-sagemath-lsp-config|
+4. 命令 ........................... |zsm-sagemath-lsp-commands|
+
+==============================================================================
+1. 介绍                                         *zsm-sagemath-lsp-intro*
+
+zsm-sagemath-lsp 是一个为 Neovim 提供 SageMath 语言服务器协议支持的插件。
+
+功能:
+  - 代码补全
+  - 跳转到定义
+  - 悬停文档
+  - 代码诊断
+  - 代码格式化
+
+==============================================================================
+2. 安装                                         *zsm-sagemath-lsp-install*
+
+使用 lazy.nvim: >
+  {
+    "zsm/zsm-sagemath-lsp",
+    ft = "sage",
+    config = function()
+      require("zsm-sagemath-lsp").setup()
+    end
+  }
+<
+
+==============================================================================
+3. 配置                                         *zsm-sagemath-lsp-config*
+
+setup({opts})                                   *zsm-sagemath-lsp.setup()*
+    配置插件
+
+    参数: ~
+        {opts} (table) 配置选项
+            • cmd: LSP 服务器命令 (默认: {"sagelsp"})
+            • log_level: 日志级别 (默认: "INFO")
+            • on_attach: LSP 附加回调函数
+            • capabilities: LSP 能力配置
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
