@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+import json
 import os
 from pathlib import Path
+import re
+import shutil
 import sys
+
+from .runtime import run_command
 
 try:
     import jedi
@@ -30,6 +35,38 @@ class PythonDefinition:
 @dataclass
 class PythonHover:
     value: str
+
+
+FROM_IMPORT_RE = re.compile(
+    r"^\s*from\s+(?P<module>[A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+(?P<prefix>[A-Za-z_][A-Za-z0-9_]*)?$"
+)
+IMPORT_COMPLETION_SCRIPT = r"""
+import importlib
+import json
+import pkgutil
+import sys
+
+module_name = sys.argv[1]
+mode = sys.argv[2]
+prefix = sys.argv[3]
+items = set()
+
+module = importlib.import_module(module_name)
+
+if mode == "member":
+    items.update(getattr(module, "__all__", []))
+    items.update(dir(module))
+    if hasattr(module, "__path__"):
+        for item in pkgutil.iter_modules(module.__path__):
+            items.add(item.name)
+else:
+    if hasattr(module, "__path__"):
+        for item in pkgutil.iter_modules(module.__path__):
+            items.add(item.name)
+
+results = sorted(name for name in items if not prefix or name.startswith(prefix))
+print(json.dumps(results[:200]))
+"""
 
 
 def jedi_available() -> bool:
@@ -61,6 +98,18 @@ def workspace_python(workspace_root: str | None) -> str:
         if candidate.exists():
             return str(candidate)
     return sys.executable
+
+
+def workspace_python_command(workspace_root: str | None) -> list[str]:
+    if workspace_root:
+        root = Path(workspace_root)
+        if (root / "pyproject.toml").exists() and shutil.which("uv"):
+            python_bin = root / ".venv" / "bin" / "python"
+            python_exe = root / ".venv" / "Scripts" / "python.exe"
+            if python_bin.exists() or python_exe.exists():
+                return [workspace_python(workspace_root)]
+            return ["uv", "run", "--project", workspace_root, "python"]
+    return [workspace_python(workspace_root)]
 
 
 @lru_cache(maxsize=16)
@@ -185,3 +234,46 @@ def definitions(snapshot, workspace_root: str | None, doc_path: str | None, line
                 )
             )
     return definitions_list
+
+
+def import_completions(line_prefix: str, workspace_root: str | None) -> list[PythonCompletion]:
+    from_match = FROM_IMPORT_RE.match(line_prefix)
+    if from_match:
+        module_name = from_match.group("module")
+        prefix = from_match.group("prefix") or ""
+        return _run_import_completion(module_name, "member", prefix, workspace_root)
+
+    stripped = line_prefix.lstrip()
+    if stripped.startswith("import "):
+        tail = stripped[len("import ") :].strip()
+        if "." in tail:
+            module_name, prefix = tail.rsplit(".", 1)
+            return _run_import_completion(module_name, "submodule", prefix, workspace_root)
+
+    return []
+
+
+def _run_import_completion(
+    module_name: str,
+    mode: str,
+    prefix: str,
+    workspace_root: str | None,
+) -> list[PythonCompletion]:
+    command = [*workspace_python_command(workspace_root), "-c", IMPORT_COMPLETION_SCRIPT, module_name, mode, prefix]
+    result = run_command(command, cwd=workspace_root, timeout=20)
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+
+    try:
+        names = json.loads(result.stdout)
+    except Exception:
+        return []
+
+    return [
+        PythonCompletion(
+            label=name,
+            kind="module" if mode == "submodule" else "statement",
+            documentation=f"Imported from `{module_name}`",
+        )
+        for name in names
+    ]

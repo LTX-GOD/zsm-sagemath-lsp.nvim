@@ -16,6 +16,7 @@ from .python_analysis import (
     completions as python_completions,
     definitions as python_definitions,
     hover as python_hover,
+    import_completions,
     jedi_available,
 )
 from .runtime import executable_exists, load_json, run_command, write_shadow_file
@@ -122,6 +123,13 @@ def completion(
 
     prefix_match = WORD_RE.search(line_text)
     prefix = prefix_match.group() if prefix_match else ""
+
+    for item in import_completions(line_text, ls.workspace.root_path):
+        items[item.label] = CompletionEntry(
+            label=item.label,
+            kind=_python_completion_kind(item.kind),
+            documentation=item.documentation,
+        )
 
     for symbol in snapshot.local_symbols:
         if prefix and not symbol.name.startswith(prefix):

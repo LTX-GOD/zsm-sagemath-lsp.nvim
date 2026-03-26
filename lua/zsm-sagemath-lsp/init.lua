@@ -7,7 +7,7 @@ M.config = {
   filetypes = { "sage" },
   root_dir = function(fname)
     local util = require("lspconfig.util")
-    return util.root_pattern("pyproject.toml", ".git", ".zsm-sagemath-lsp")(fname) or vim.fn.getcwd()
+    return util.root_pattern("pyproject.toml", "uv.lock", ".venv", ".git", ".zsm-sagemath-lsp")(fname) or vim.fn.getcwd()
   end,
   init_options = {
     enable_diagnostics = true,
